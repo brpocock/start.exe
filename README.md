@@ -12,7 +12,7 @@ start that program.
 It is meant as a binfmt handler for Linux.
 
 You can  also associate .exe files  with it, from a  desktop environment
-like Gnome; I need to add a config file for the MIME type for that.
+like Gnome.
 
 Usage
 =====
@@ -22,5 +22,6 @@ Usage
     sudo restorecon /usr/bin/start.exe
     sudo cp binfmt.exe.conf /etc/binfmt.d/start.exe.conf
     sudo restorecon /etc/binfmt.d/start.exe.conf
-
+    sudo cp start.exe.desktop /usr/share/applications/
+    sudo restorecon /usr/share/applications/start.exe.desktop
 

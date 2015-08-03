@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Start an EXE file
+Exec=/usr/bin/start.exe %f
+MimeType=application/x-ms-dos-executable;application/x-msi;application/x-ms-shortcut;
+Icon=wine
+NoDisplay=true
+
