@@ -11,6 +11,9 @@ start that program.
 
 It is meant as a binfmt handler for Linux.
 
+You can  also associate .exe files  with it, from a  desktop environment
+like Gnome; I need to add a config file for the MIME type for that.
+
 Usage
 =====
 
