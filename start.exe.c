@@ -86,19 +86,19 @@ read_bytes (FILE* file, char* filename, long number)
 #endif
 }
 
-  /*
-   * The first two bytes must be "MZ"
-   */
-  void
-    check_for_exe_header (FILE* file, char* filename)
-  {
-    assert (NULL != file);
-    assert (NULL != filename);
+/*
+ * The first two bytes must be "MZ"
+ */
+void
+check_for_exe_header (FILE* file, char* filename)
+{
+  assert (NULL != file);
+  assert (NULL != filename);
 
-    file_seek (file, filename, 0);
-    read_bytes (file, filename, 2);
-    if ('M' != bytes[0] || 'Z' != bytes[1]) {
-      fprintf (stderr, "\nError: %s does not begin with MZ magic.\n\
+  file_seek (file, filename, 0);
+  read_bytes (file, filename, 2);
+  if ('M' != bytes[0] || 'Z' != bytes[1]) {
+    fprintf (stderr, "\nError: %s does not begin with MZ magic.\n\
 This is probably not an EXE file\n",
              filename);
     exit (4);
@@ -137,18 +137,14 @@ This is probably not an EXE file.",
   }
 }
 
-/*
- * Try to start the thunk program provided.
- */
-void
-try_run (char* program, char* filename)
+char** recreate_argv (char* program, char* filename)
 {
   assert (NULL != program);
   assert (NULL != filename);
 
   char** argv = calloc (sizeof(char*), 1+ saved_argc);
   if (NULL == argv) { die_no_mem (); }
-  
+
   argv[0] = strdup (program);
   argv[1] = strdup (filename);
   if (saved_argc > 2) {
@@ -162,33 +158,49 @@ try_run (char* program, char* filename)
     printf ("\n argv[%d] = %s", i, argv[i]);
   }
 #endif
+  return argv;
+}
+
+void free_list_of_strings (char** string_array, size_t count)
+{
+  for (size_t i = 0; i < count; ++i) {
+    if (string_array[i])
+      { free (string_array[i]); }
+  }
+  free (string_array);
+}
+
+/*
+ * Try to start the thunk program provided.
+ */
+void
+try_run (char* program, char* filename)
+{
+  char** argv = recreate_argv (program, filename);
   execv (argv[0], argv);
   fprintf (stderr, "\nFailed to run %s %s: error %d (%s)\n",
            program, filename, errno, strerror (errno));
-  for (int i = 0; i < saved_argc; ++i) {
-    free (argv[i]);
-  }
-  free (argv);
+  free_list_of_strings(argv, saved_argc);
 }
 
-    /*
-     * Try to start DOSBox, but only if we seem to be running in X.
-     */
-    void
-    try_dosbox (char* filename)
-  {
-    assert (NULL != filename);
-    char* display = getenv ("DISPLAY");
-    if (NULL == display || '\0' == display[0]) {
-      fprintf (stderr, "\nCannot run DOSBox: DISPLAY is unset.\n");
-    } else {
-      try_run ("/usr/bin/dosbox", filename);
-    }
+/*
+ * Try to start DOSBox, but only if we seem to be running in X.
+ */
+void
+try_dosbox (char* filename)
+{
+  assert (NULL != filename);
+  char* display = getenv ("DISPLAY");
+  if (NULL == display || '\0' == display[0]) {
+    fprintf (stderr, "\nCannot run DOSBox: DISPLAY is unset.\n");
+  } else {
+    try_run ("/usr/bin/dosbox", filename);
   }
+}
 
-  /*
-   * Try to run DOSEmu.
-   */
+/*
+ * Try to run DOSEmu.
+ */
 void
 try_dosemu (char* filename)
 {
@@ -196,26 +208,26 @@ try_dosemu (char* filename)
   try_run ("/usr/bin/dosemu", filename);
 }
 
-  /*
-   * Try to run  either DOSBox or DOSEmu. DOSBox will  not actually try to
-   * start if  DISPLAY is not set  in the environment, allowing  DOSEmu to
-   * start up using its framebuffer mode.
-   */
-  void
-    start_as_dos (char* filename)
-  {
-    assert (NULL != filename);
-    try_dosbox (filename);
-    try_dosemu (filename);
-    fprintf (stderr, "\nError: Could not start either DOSBox nor DOSEmu for %s\n",
-             filename);
-    exit (5);
-  }
+/*
+ * Try to run  either DOSBox or DOSEmu. DOSBox will  not actually try to
+ * start if  DISPLAY is not set  in the environment, allowing  DOSEmu to
+ * start up using its framebuffer mode.
+ */
+void
+start_as_dos (char* filename)
+{
+  assert (NULL != filename);
+  try_dosbox (filename);
+  try_dosemu (filename);
+  fprintf (stderr, "\nError: Could not start either DOSBox nor DOSEmu for %s\n",
+           filename);
+  exit (5);
+}
 
-  /*
-   * See if this is  a DOS .exe file, as (The value at  0x18) & 0xc0 == 0;
-   * if true, try to start something to handle a DOS program.
-   */
+/*
+ * See if this is  a DOS .exe file, as (The value at  0x18) & 0xc0 == 0;
+ * if true, try to start something to handle a DOS program.
+ */
 void
 maybe_dos_exe (FILE* file, char* filename)
 {
@@ -229,88 +241,110 @@ maybe_dos_exe (FILE* file, char* filename)
   }
 }
 
-  /*
-   * See if this is a .NET/Mono .exe  file. There is a magic cookie in the
-   * PE header + 24 bytes, which is  either 0xb01 or 0xb02, and if it is
-   * found, we have to  also ensure that there's a zero byte  at PE + (232
-   * or 248, resp. of the first cookie).
-   *
-   * If it looks like .NET, start it with Mono.
-   */
-void maybe_mono_exe (FILE* file, char* filename, long pe_offset)
+/* First magic cookie present? If so, we need to know where to look for the next part. */
+long
+find_next_offset_pe()
 {
-  assert (NULL != file);
-  assert (NULL != filename);
-  
-  file_seek (file, filename, pe_offset + 24);
-  read_bytes (file, filename, 2);
-
-  long next_offset = -1;
-
-  /* First magic  cookie present? If so,  we need to know  where to look
-     for the next part. */
   if (0xb == bytes[0]) {
     switch (bytes[1]) {
     case 1:
-      next_offset = 232;
-      break;
+      return 232;
     case 2:
-      next_offset = 248;
-      break;
+      return 248;
     default:
-      next_offset = -1;
+      return -1;
     };
   }
 
-  if (0 < next_offset) {
-    /* This byte also has to be 0 for it to be a .NET .exe. */
-    file_seek (file, filename, pe_offset + next_offset);
-    read_bytes (file, filename, 1);
-    if ('\0' != bytes[0]) {
-      (void) fclose (file);
-      try_run ("/usr/bin/mono", filename);
-      exit (9);
-    }
+  return -2;
+}
+
+void
+start_mono_if_zero_at(FILE* file, char* filename, long offset)
+{
+  /* This byte also has to be 0 for it to be a .NET .exe. */
+  file_seek (file, filename, offset);
+  read_bytes (file, filename, 1);
+  if ('\0' != bytes[0]) {
+    (void) fclose (file);
+    try_run ("/usr/bin/mono", filename);
+    exit (9);
   }
 }
 
-  /*
-   * As a last resort, we assume that Wine will be able to make some sense of it.
-   */
-  void
-    start_windows_exe (FILE* file, char* filename)
-  {
-    assert (NULL != file);
-    assert (NULL != filename);
-    (void) fclose (file);
-    try_run ("/usr/bin/wine", filename);
-    exit (10);
-  }
+/*
+ * See if this is a .NET/Mono  .exe file. There is a magic cookie in the PE header +  24 bytes, which is either 0xb01 or
+ * 0xb02, and if it is  found, we have to also ensure that there's  a zero byte at PE + (232 or  248, resp. of the first
+ * cookie).
+ *
+ * If it looks like .NET, start it with Mono.
+ */
+void
+maybe_mono_exe (FILE* file, char* filename, long pe_offset)
+{
+  assert (NULL != file);
+  assert (NULL != filename);
 
-  /*
-   * The main logic of the program.
-   */
-  void
-    invoke_thunk_for (char* filename)
-  {
-    FILE* file = fopen (filename, "r");
-    if (NULL == file) {
-      fprintf (stderr, "\nCan't start file %s: error %d (%s)\n",
-               filename, errno, strerror (errno));
-      exit (2);
-    }
-    check_for_exe_header (file, filename);
-    maybe_dos_exe (file, filename);
-    long pe_offset = pe_header_offset (file, filename);
-    check_for_pe_header (file, filename, pe_offset);
-    maybe_mono_exe (file, filename, pe_offset);
-    start_windows_exe (file, filename);
-  }
+  file_seek (file, filename, pe_offset + 24);
+  read_bytes (file, filename, 2);
 
-  void
-    print_help_and_exit (char* self)
-  {
-    fprintf (stderr, "\nUsage: %s filename\n\
+  long next_offset = find_next_offset_pe ();
+
+  if (0 < next_offset) {
+    start_mono_if_zero_at(file, filename, pe_offset + next_offset);
+  }
+}
+
+/*
+ * As a last resort, we assume that Wine will be able to make some sense of it.
+ */
+void
+start_windows_exe (FILE* file, char* filename)
+{
+  assert (NULL != file);
+  assert (NULL != filename);
+  (void) fclose (file);
+  try_run ("/usr/bin/wine", filename);
+  exit (10);
+}
+
+void
+maybe_dotnet_exe (FILE* file, char* filename)
+{
+  long pe_offset = pe_header_offset (file, filename);
+  check_for_pe_header (file, filename, pe_offset);
+  maybe_mono_exe (file, filename, pe_offset);
+}
+
+FILE*
+open_file (char* filename)
+{
+  FILE* file = fopen (filename, "r");
+  if (NULL == file) {
+    fprintf (stderr, "\nCan't start file %s: error %d (%s)\n",
+             filename, errno, strerror (errno));
+    exit (2);
+  }
+  return file;
+}
+
+/*
+ * The main logic of the program.
+ */
+void
+invoke_thunk_for (char* filename)
+{
+  FILE* file = open_file (filename);
+  check_for_exe_header (file, filename);
+  maybe_dos_exe (file, filename);
+  maybe_dotnet_exe(file, filename);
+  start_windows_exe (file, filename);
+}
+
+void
+print_help_and_exit (char* self)
+{
+  fprintf (stderr, "\nUsage: %s filename\n\
 \n\
 Calls DOSBox or DOSEmu, or Wine, or Mono, depending on the exact \n\
 executable file type.\n\
@@ -326,32 +360,56 @@ start that program.\n\
   exit (0);
 }
 
-int
-main (int argc, char** argv)
+void
+check_usage_or_exit (int argc, char* argv0)
 {
   if (argc < 2) {
     fprintf (stderr, "\nError: Usage: %s --help or %s filename\n",
-             argv[0], argv[0]);
+             argv0, argv0);
     exit (1);
   }
-  
-  if (0 == strcmp (argv[1], "--help")) {
-    print_help_and_exit (argv[0]);
-  }
-  
+}
+
+void
+assert_not_root ()
+{
   if (0 == geteuid () || 0 == getuid ()) {
     fprintf (stderr, "\nError: Refusing to run in superuser state\n");
     exit (6);
   }
-  
-  init_buffer ();
+}
 
+void
+stash_args (int argc, char** argv)
+{
   saved_argc = argc;
   saved_argv = calloc (sizeof(char*), argc);
   for (int i = 0; i < argc; ++i) {
     saved_argv[i] = strdup (argv[i]);
+#ifdef DEBUG
     printf ("\n save argv[%d] = %s", i, saved_argv[i]);
+#endif
   }
-  
+}
+
+void
+maybe_print_help_and_exit (char* argv0, char* argv1)
+{
+  if (0 == strcmp (argv1, "--help")) {
+    print_help_and_exit (argv0);
+  }
+}
+
+int
+main (int argc, char** argv)
+{
+  check_usage_or_exit (argc, argv[0]);
+  maybe_print_help_and_exit (argv[0], argv[1]);
+
+  assert_not_root ();
+  init_buffer ();
+
+  stash_args(argc, argv);
+
   invoke_thunk_for (argv[1]);
 }
