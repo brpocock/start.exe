@@ -74,7 +74,7 @@ read_bytes (FILE* file, char* filename, long number)
 #endif
   size_t got = fread(bytes, 1, number, file);
   if (number != got) {
-    fprintf (stderr, "\nError: Failed to read %d %s needed from %s (got %d)\n",
+    fprintf (stderr, "\nError: Failed to read %ld %s needed from %s (got %ld)\n",
              number, (number == 1 ? "byte" : "bytes"), filename, got);
     exit (3);
   }
