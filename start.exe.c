@@ -240,7 +240,7 @@ maybe_dos_exe (FILE* file, const char* filename)
   assert (NULL != filename);
   file_seek (file, filename, 0x18);
   read_bytes (file, filename, 1);
-  if (0 == bytes[0] & 0xc0) {
+  if (0 == (bytes[0] & 0xc0)) {
     (void) fclose (file);
     start_as_dos (filename);
   }
